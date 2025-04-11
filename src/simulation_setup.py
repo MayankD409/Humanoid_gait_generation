@@ -3,7 +3,7 @@
 
 """
 Simulation setup for humanoid imitation learning project.
-This script initializes the PyBullet environment, loads a humanoid robot,
+This script initializes the PyBullet environment, loads the Atlas robot,
 and demonstrates playback of dummy motion data.
 """
 
@@ -22,17 +22,18 @@ def main():
     
     # Configure debug visualizer
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)
-    p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 0)
+    p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)  # Enable shadows for better visualization
     p.configureDebugVisualizer(p.COV_ENABLE_MOUSE_PICKING, 1)
     
     # Load the ground plane
     planeId = p.loadURDF("plane.urdf")
     
-    # 2. Load Humanoid Robot
+    # 2. Load Atlas Robot
     print("Loading Atlas robot...")
     
     # Set the initial position and orientation of the robot
-    startPos = [0, 0, 1.3]  # Starting position (raised higher for Atlas)
+    # Position the robot so feet are directly on the ground
+    startPos = [0, 0, 0.93]  # Lower position to make feet touch the ground
     startOrientation = p.getQuaternionFromEuler([0, 0, 0])  # Starting orientation
     
     # Define the path to the Atlas URDF file in the local atlas_description folder
@@ -41,73 +42,158 @@ def main():
     
     print("Loading Atlas from: {}".format(atlas_urdf_path))
     
-    # Load the robot
-    robotId = p.loadURDF(atlas_urdf_path, startPos, startOrientation)
+    # Load the robot with fixed base initially to set up the pose
+    # This prevents the robot from falling during initialization
+    robotId = p.loadURDF(atlas_urdf_path, startPos, startOrientation, useFixedBase=True)
     
     if robotId is None:
         print("Failed to load the Atlas robot. Trying a fallback humanoid model...")
         # Try an alternative robot if Atlas is not available
-        robotId = p.loadURDF("humanoid/humanoid.urdf", startPos, startOrientation)
+        robotId = p.loadURDF("humanoid/humanoid.urdf", startPos, startOrientation, useFixedBase=True)
     
     if robotId is None:
         print("Failed to load any humanoid robot. Exiting...")
         p.disconnect()
         return
     
-    # Initialize Atlas to a stable standing position
-    print("Initializing Atlas to a stable pose...")
+    # 3. Configure Visualization
+    print("Configuring visualization...")
+    p.resetDebugVisualizerCamera(
+        cameraDistance=5.0,
+        cameraYaw=30,
+        cameraPitch=-20,  # Better angle to see the robot
+        cameraTargetPosition=[0, 0, 1.0]
+    )
     
-    # Dictionary of joint names to initial angles for a stable pose
-    # These values are approximate - you may need to adjust them
-    initial_poses = {
-        "back_bky": 0.0,      # Keep torso upright
-        "back_bkx": 0.0,
-        "back_bkz": 0.0,
-        "l_leg_hpy": -0.1,    # Slight hip bend
-        "r_leg_hpy": -0.1,
-        "l_leg_kny": 0.2,     # Slight knee bend
-        "r_leg_kny": 0.2,
-        "l_leg_aky": 0.0,     # Neutral ankles
-        "r_leg_aky": 0.0,
-        "l_arm_shx": -0.1,    # Arms slightly out
-        "r_arm_shx": 0.1,
-        "l_arm_ely": 0.5,     # Slight elbow bend
-        "r_arm_ely": 0.5,
-    }
+    # 4. Apply a stable standing pose
+    print("Setting Atlas to a stable pose...")
     
-    # Set initial joint poses
+    # Get all joint indices and names for easier reference
     joint_name_to_index = {}
     for i in range(p.getNumJoints(robotId)):
         joint_info = p.getJointInfo(robotId, i)
         joint_name = joint_info[1].decode('utf-8')
         joint_name_to_index[joint_name] = i
     
-    # Apply initial poses
+    # Disable the default motor control for all joints
+    for joint_name, joint_index in joint_name_to_index.items():
+        p.setJointMotorControl2(robotId, joint_index, p.VELOCITY_CONTROL, force=0)
+    
+    # Dictionary of joint names to initial angles for a stable pose
+    initial_poses = {
+        # Torso
+        "back_bkz": 0.0,
+        "back_bky": 0.05,  # Slight forward tilt for balance
+        "back_bkx": 0.0,
+        
+        # Left leg
+        "l_leg_hpz": 0.0,
+        "l_leg_hpx": 0.0,
+        "l_leg_hpy": -0.2,  # Bend at hip for stability
+        "l_leg_kny": 0.4,   # Bend knee for stability
+        "l_leg_aky": -0.2,  # Ankle compensates for knee bend
+        "l_leg_akx": 0.0,
+        
+        # Right leg
+        "r_leg_hpz": 0.0,
+        "r_leg_hpx": 0.0,
+        "r_leg_hpy": -0.2,  # Bend at hip for stability  
+        "r_leg_kny": 0.4,   # Bend knee for stability
+        "r_leg_aky": -0.2,  # Ankle compensates for knee bend
+        "r_leg_akx": 0.0,
+        
+        # Arms in neutral position
+        "l_arm_shz": 0.0,
+        "l_arm_shx": -0.1,
+        "l_arm_ely": 1.5,   # Arm bent at elbow
+        "l_arm_elx": 0.0,
+        "l_arm_wry": 0.0,
+        "l_arm_wrx": 0.0,
+        "l_arm_wry2": 0.0,
+        
+        "r_arm_shz": 0.0,
+        "r_arm_shx": 0.1,
+        "r_arm_ely": 1.5,   # Arm bent at elbow
+        "r_arm_elx": 0.0,
+        "r_arm_wry": 0.0,
+        "r_arm_wrx": 0.0,
+        "r_arm_wry2": 0.0,
+        
+        # Neck
+        "neck_ry": 0.0
+    }
+    
+    # Apply initial poses to all joints
     for joint_name, angle in initial_poses.items():
         if joint_name in joint_name_to_index:
-            p.resetJointState(robotId, joint_name_to_index[joint_name], angle)
+            joint_index = joint_name_to_index[joint_name]
+            p.resetJointState(robotId, joint_index, angle)
     
-    # Let the robot settle briefly in the starting pose
-    for _ in range(50):
+    # Let the robot settle with fixed base
+    for _ in range(100):
         p.stepSimulation()
+        time.sleep(0.01)  # Slow down simulation for stability
     
-    # Add a fixed base constraint to keep the robot stable during the demo
-    # This can be removed later when implementing actual walking
-    fixed_base = p.createConstraint(
-        robotId, -1, -1, -1,
-        p.JOINT_FIXED, [0, 0, 0], [0, 0, 0], [0, 0, 1.3]
-    )
+    # Keep track of the original position
+    basePos, baseOrn = p.getBasePositionAndOrientation(robotId)
+    print("Base position after pose setup: {}".format(basePos))
     
-    # 3. Configure Visualization
-    print("Configuring visualization...")
-    p.resetDebugVisualizerCamera(
-        cameraDistance=5.0,
-        cameraYaw=30,
-        cameraPitch=-30,
-        cameraTargetPosition=[0, 0, 1.0]
-    )
+    # Now apply strong motor control to hold the position
+    for joint_name, angle in initial_poses.items():
+        if joint_name in joint_name_to_index:
+            joint_index = joint_name_to_index[joint_name]
+            p.setJointMotorControl2(
+                bodyUniqueId=robotId,
+                jointIndex=joint_index,
+                controlMode=p.POSITION_CONTROL,
+                targetPosition=angle,
+                positionGain=1.0,
+                velocityGain=1.0,
+                force=1000  # Strong force to maintain position
+            )
     
-    # 4. Inspect Robot Joints
+    # Let the robot settle again with motor control
+    for _ in range(100):
+        p.stepSimulation()
+        time.sleep(0.01)
+    
+    # Now that the robot is in a stable pose, we can switch to dynamic base
+    # First, get current base pose
+    basePos, baseOrn = p.getBasePositionAndOrientation(robotId)
+    
+    # Create a temporary robot with fixed base (needed because we can't change fixed base status)
+    temp_robot_id = robotId
+    
+    # Reload the robot with the same pose but with dynamic base
+    robotId = p.loadURDF(atlas_urdf_path, basePos, baseOrn, useFixedBase=False)
+    
+    # Remove the temporary robot
+    p.removeBody(temp_robot_id)
+    
+    # Reapply the joint states to the new robot instance
+    for joint_name, angle in initial_poses.items():
+        if joint_name in joint_name_to_index:
+            joint_index = joint_name_to_index[joint_name]
+            p.resetJointState(robotId, joint_index, angle)
+            
+            # Apply strong position control to each joint
+            p.setJointMotorControl2(
+                bodyUniqueId=robotId,
+                jointIndex=joint_index,
+                controlMode=p.POSITION_CONTROL,
+                targetPosition=angle,
+                positionGain=1.0,
+                velocityGain=1.0,
+                force=1000  # Strong force to maintain position
+            )
+    
+    # Let the robot settle with gravity but strong motor control
+    print("Stabilizing the robot with dynamics...")
+    for _ in range(200):
+        p.stepSimulation()
+        time.sleep(0.01)
+    
+    # 5. Inspect Robot Joints
     print("Inspecting robot joints...")
     num_joints = p.getNumJoints(robotId)
     print("Number of joints: {}".format(num_joints))
@@ -157,14 +243,14 @@ def main():
     
     print("Selected joints for motion control: Knee: {}, Elbow: {}".format(knee_joint_idx, elbow_joint_idx))
     
-    # 5. Create Dummy Motion Data
+    # 6. Create Dummy Motion Data
     print("Creating dummy motion data...")
-    num_steps = 150  # Number of simulation steps for the motion
+    num_steps = 200  # More steps for smoother motion
     
-    # Create sine wave motion data for the selected joints
+    # Create smaller sine wave motion for stability (reduce amplitude)
     time_steps = np.linspace(0, 2*np.pi, num_steps)
-    knee_angles = 0.3 * np.sin(time_steps) + 0.5  # Sine wave centered around 0.5 radians
-    elbow_angles = 0.4 * np.sin(time_steps + np.pi/4) + 1.0  # Offset sine wave centered around 1.0 radians
+    knee_angles = 0.1 * np.sin(time_steps) + initial_poses["l_leg_kny"]  # Small motion around initial pose
+    elbow_angles = 0.2 * np.sin(time_steps + np.pi/4) + initial_poses["l_arm_ely"]  # Small motion around initial pose
     
     # Combine the joint angles into a single array
     motion_data = np.column_stack((knee_angles, elbow_angles))
@@ -178,13 +264,14 @@ def main():
     np.save(motion_data_path, motion_data)
     print("Saved dummy motion data to {}".format(motion_data_path))
     
-    # 6. Load Dummy Motion Data
+    # 7. Load Dummy Motion Data
     print("Loading dummy motion data...")
     loaded_motion_data = np.load(motion_data_path)
     print("Loaded motion data with shape: {}".format(loaded_motion_data.shape))
     
-    # 7. Implement Simulation Loop with Motion Playback
+    # 8. Implement Simulation Loop with Motion Playback
     print("Starting simulation loop with motion playback...")
+    print("Press Ctrl+C to exit...")
     step = 0
     
     try:
@@ -197,12 +284,33 @@ def main():
                 step = 0
                 knee_angle, elbow_angle = loaded_motion_data[step]
             
-            # Apply the joint controls
+            # Keep applying strong control to all joints except the ones we're animating
+            for joint_name, angle in initial_poses.items():
+                if joint_name in joint_name_to_index:
+                    joint_index = joint_name_to_index[joint_name]
+                    
+                    # Skip the joints we're animating separately
+                    if joint_index == knee_joint_idx or joint_index == elbow_joint_idx:
+                        continue
+                        
+                    p.setJointMotorControl2(
+                        bodyUniqueId=robotId,
+                        jointIndex=joint_index,
+                        controlMode=p.POSITION_CONTROL,
+                        targetPosition=angle,
+                        positionGain=1.0,
+                        velocityGain=1.0,
+                        force=1000  # Strong force to maintain position
+                    )
+            
+            # Apply the joint controls with smoother motion
             p.setJointMotorControl2(
                 bodyUniqueId=robotId,
                 jointIndex=knee_joint_idx,
                 controlMode=p.POSITION_CONTROL,
                 targetPosition=knee_angle,
+                positionGain=0.5,  # Lower gain for smoother motion
+                velocityGain=0.5,
                 force=100  # Lower force for smoother motion
             )
             
@@ -211,6 +319,8 @@ def main():
                 jointIndex=elbow_joint_idx,
                 controlMode=p.POSITION_CONTROL,
                 targetPosition=elbow_angle,
+                positionGain=0.5,  # Lower gain for smoother motion
+                velocityGain=0.5,
                 force=100  # Lower force for smoother motion
             )
             
@@ -226,7 +336,7 @@ def main():
     except KeyboardInterrupt:
         print("Simulation stopped by user")
     finally:
-        # 8. Disconnect from the physics server
+        # 9. Disconnect from the physics server
         p.disconnect()
         print("Disconnected from PyBullet")
 

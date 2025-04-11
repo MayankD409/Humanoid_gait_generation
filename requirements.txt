@@ -1,0 +1,5 @@
+pybullet==3.2.5
+numpy>=1.20.0
+opencv-python>=4.5.0
+tensorflow>=2.6.0
+matplotlib>=3.4.0

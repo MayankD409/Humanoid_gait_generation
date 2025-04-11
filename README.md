@@ -15,8 +15,25 @@ This project aims to train a simulated humanoid robot (Atlas model in PyBullet) 
 - `models/`: Trained models and weights
 - `notebooks/`: Jupyter notebooks for experimentation and visualization
 - `config/`: Configuration files
+- `utils/`: Utility scripts including dependency checker
+- `atlas_description/`: Atlas robot URDF and mesh files
 
-## Setup
+## Installation & Setup
+
+### Quick Setup (Linux/macOS)
+For a quick setup on Linux or macOS, use the provided setup script:
+
+```bash
+# Clone the repository
+git clone [repository-url]
+cd humanoid_imitation
+
+# Run the setup script
+./setup.sh
+```
+
+### Manual Setup
+
 ```bash
 # Clone the repository
 git clone [repository-url]
@@ -34,3 +51,40 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 ```
+
+### Checking Dependencies
+To verify all dependencies are correctly installed:
+
+```bash
+# Activate virtual environment first if not already active
+python -m utils.check_dependencies
+```
+
+## Running the Simulation
+
+### Basic Atlas Robot Simulation
+To run the basic Atlas robot simulation:
+
+```bash
+python src/simulation_setup.py
+```
+
+This will launch a PyBullet window with the Atlas robot in a stable standing pose with animated elbow and knee joints.
+
+## Development
+
+### Contributing
+1. Create a feature branch: `git checkout -b feature/your-feature-name`
+2. Make your changes
+3. Commit your changes: `git commit -m "Add your feature description"`
+4. Push to the branch: `git push origin feature/your-feature-name`
+5. Submit a pull request
+
+### Adding Dependencies
+When adding new dependencies:
+1. Install the package: `pip install package-name`
+2. Update requirements.txt: `pip freeze > requirements.txt` or manually add the package
+3. Make sure to add version specifiers (e.g., `package>=1.0.0`) for better reproducibility
+
+## License
+[Specify license here]

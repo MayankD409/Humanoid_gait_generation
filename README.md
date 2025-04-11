@@ -70,21 +70,3 @@ python src/simulation_setup.py
 ```
 
 This will launch a PyBullet window with the Atlas robot in a stable standing pose with animated elbow and knee joints.
-
-## Development
-
-### Contributing
-1. Create a feature branch: `git checkout -b feature/your-feature-name`
-2. Make your changes
-3. Commit your changes: `git commit -m "Add your feature description"`
-4. Push to the branch: `git push origin feature/your-feature-name`
-5. Submit a pull request
-
-### Adding Dependencies
-When adding new dependencies:
-1. Install the package: `pip install package-name`
-2. Update requirements.txt: `pip freeze > requirements.txt` or manually add the package
-3. Make sure to add version specifiers (e.g., `package>=1.0.0`) for better reproducibility
-
-## License
-[Specify license here]

@@ -25,8 +25,8 @@ For a quick setup on Linux or macOS, use the provided setup script:
 
 ```bash
 # Clone the repository
-git clone [repository-url]
-cd humanoid_imitation
+git clone git@github.com:MayankD409/Humanoid_gait_generation.git
+cd Humanoid_gait_generation
 
 # Run the setup script
 ./setup.sh
@@ -36,8 +36,8 @@ cd humanoid_imitation
 
 ```bash
 # Clone the repository
-git clone [repository-url]
-cd humanoid_imitation
+git clone git@github.com:MayankD409/Humanoid_gait_generation.git
+cd Humanoid_gait_generation
 
 # Set up virtual environment
 python -m venv venv

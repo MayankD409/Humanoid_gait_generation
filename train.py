@@ -132,7 +132,7 @@ class IterationMetricsCallback(BaseCallback):
 
 # Parse arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--timesteps', type=int, default=10000000, 
+parser.add_argument('--timesteps', type=int, default=5000, 
                     help='Total number of timesteps to train')
 parser.add_argument('--timesteps_per_iteration', type=int, default=10000,
                     help='Number of timesteps per iteration (for logging purposes)')

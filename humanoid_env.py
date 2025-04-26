@@ -17,50 +17,53 @@ except ImportError:
         raise
 
 class HumanoidImitationWalkEnv(HumanoidDeepMimicWalkBulletEnv):
-    """
-    A custom environment for humanoid walking imitation learning, directly inheriting
-    from PyBullet's HumanoidDeepMimicWalkBulletEnv.
-    """
-    
     def __init__(self, renders=False, motion_file='data/Walking.json'):
-        """
-        Initialize the humanoid walking imitation environment.
-        
-        Args:
-            renders (bool): Whether to render the environment
-            motion_file (str): Path to the motion file to imitate
-        """
-        # Set the environment variable for the motion file before creating the env
         if motion_file:
             os.environ["PYBULLET_DEEP_MIMIC_MOTION_FILE"] = motion_file
-        
-        # Call the parent class constructor
+
+        # ***** STEP 1: Call the parent constructor FIRST *****
+        # This will load the URDF and initialize self.humanoid
         super().__init__(renders=renders)
-        
-        # Identify and store link indices for key body parts
-        # These names might need to be adjusted based on the exact URDF structure
-        try:
-            # Try to get body part indices from the humanoid URDF
-            self.left_foot_id = self._find_link_index('left_foot')
-            self.right_foot_id = self._find_link_index('right_foot')
-            self.left_hand_id = self._find_link_index('left_hand')
-            self.right_hand_id = self._find_link_index('right_hand')
-            self.torso_link_id = self._find_link_index('torso')
-            
-            print(f"Found link IDs: left_foot={self.left_foot_id}, right_foot={self.right_foot_id}, "
-                  f"left_hand={self.left_hand_id}, right_hand={self.right_hand_id}, torso={self.torso_link_id}")
-        except Exception as e:
-            print(f"Warning: Could not find exact link names, using estimated indices: {e}")
-            # Fallback to estimated link indices if names don't match
-            # These might need tuning based on the actual URDF structure
-            self.left_foot_id = 3  
-            self.right_foot_id = 7
-            self.left_hand_id = 11
-            self.right_hand_id = 15
-            self.torso_link_id = 1
-        
-        # Initialize an empty dictionary for reward components
+
+        # Store the PyBullet client ID 
+        self.p_client = self._p
+        # Initialize reward components dictionary
         self.reward_components = {}
+
+        # ***** STEP 2: Now that self.humanoid exists, assign the link indices DIRECTLY *****
+        # Indices based on the default PyBullet humanoid structure inferred from examples
+        # Note: PyBullet often maps joint index i to link index i.
+        try:
+            # Indices corresponding to ankle joints (for feet), elbow joints (for hands), and chest joint (for torso)
+            # Updated based on provided joint info
+            self.left_foot_id = 11  # Index of left_ankle joint/link (Corrected from 10)
+            self.right_foot_id = 5   # Index of right_ankle joint/link
+            self.left_hand_id = 13  # Index of left_elbow joint/link (Corrected from 12)
+            self.right_hand_id = 7   # Index of right_elbow joint/link
+            self.torso_link_id = 1   # Index of chest joint/link
+
+            print(f"Using hardcoded link IDs: left_foot={self.left_foot_id}, right_foot={self.right_foot_id}, "
+                  f"left_hand={self.left_hand_id}, right_hand={self.right_hand_id}, torso/pelvis={self.torso_link_id}")
+
+            # # Basic check if humanoid has enough links for these indices (REMOVED due to initialization order issue)
+            # num_joints = self.p_client.getNumJoints(self.humanoid.model_id) 
+            # max_expected_index = max(self.left_foot_id, self.right_foot_id, self.left_hand_id, self.right_hand_id, self.torso_link_id)
+            # if num_joints <= max_expected_index:
+            #     print(f"Error: Humanoid model has only {num_joints} joints/links, but index {max_expected_index} is expected. Check indices.")
+            #     # Reset IDs to -1 to prevent errors later
+            #     self.left_foot_id = -1
+            #     self.right_foot_id = -1
+            #     self.left_hand_id = -1
+            #     self.right_hand_id = -1
+            #     self.torso_link_id = -1
+
+        except Exception as e:
+            print(f"Error during link index assignment: {e}")
+            self.left_foot_id = -1
+            self.right_foot_id = -1
+            self.left_hand_id = -1
+            self.right_hand_id = -1
+            self.torso_link_id = -1
 
     def _find_link_index(self, link_name):
         """
@@ -70,221 +73,300 @@ class HumanoidImitationWalkEnv(HumanoidDeepMimicWalkBulletEnv):
             link_name (str): Name of the link to find
             
         Returns:
-            int: The index of the link
+            int: The index of the link, or -1 if not found
         """
-        # Try different ways to find the link index
-        # Method 1: Try direct access to body parts if available
-        if hasattr(self, 'humanoid') and hasattr(self.humanoid, 'parts'):
-            if link_name in self.humanoid.parts:
-                return self.humanoid.parts[link_name].bodyPartIndex
-        
-        # Method 2: Use PyBullet's internal methods if we have a body ID
-        if hasattr(self, 'humanoid_id'):
-            num_joints = p.getNumJoints(self.humanoid_id)
-            for i in range(num_joints):
-                joint_info = p.getJointInfo(self.humanoid_id, i)
+        # Ensure we have a valid PyBullet client and humanoid ID
+        if not hasattr(self, 'humanoid') or not hasattr(self.humanoid, 'model_id'):
+            print(f"Warning: Cannot find link '{link_name}', humanoid model not fully initialized.")
+            return -1 # Indicate not found or error
+
+        humanoid_id = self.humanoid.model_id
+
+        # Iterate through joints to find the link name
+        num_joints = self.p_client.getNumJoints(humanoid_id)
+        for i in range(num_joints):
+            try:
+                joint_info = self.p_client.getJointInfo(humanoid_id, i)
+                # Link name is typically stored in joint_info[12]
                 if joint_info[12].decode("utf-8") == link_name:
-                    return i
-        
-        # Method 3: Look for sim_id or robot_id attributes if humanoid_id is not available
-        robot_id = getattr(self, 'sim_id', getattr(self, 'robot_id', None))
-        if robot_id is not None:
-            num_joints = p.getNumJoints(robot_id)
-            for i in range(num_joints):
-                joint_info = p.getJointInfo(robot_id, i)
-                if joint_info[12].decode("utf-8") == link_name:
-                    return i
-        
-        # If none of the methods worked, raise an exception
-        raise ValueError(f"Could not find link '{link_name}' in the humanoid model")
+                    return i # Return the joint index which corresponds to the link index in PyBullet
+            except Exception as e:
+                print(f"Error querying joint info for index {i}: {e}")
+                continue # Skip problematic joints if necessary
+
+        # Handle base link case - simplified check
+        print(f"Warning: Link '{link_name}' not found.")
+        return -1 # Indicate not found
 
     def _rewards(self):
         """
-        Calculate rewards for the humanoid walking imitation task.
+        Calculate rewards for the humanoid walking imitation task. Includes pose,
+        velocity, end-effector, COM matching, uprightness, forward progress,
+        and survival bonus.
         
         Returns:
             float: The total reward for the current state
         """
-        # Define weights for different reward components - NEEDS CAREFUL TUNING
-        w_pose = 0.5       # Weight for pose matching
-        w_vel = 0.1        # Weight for velocity matching
-        w_end_eff = 0.15   # Weight for end-effector position matching
-        w_com = 0.1        # Weight for center of mass tracking
-        w_upright = 0.05   # Weight for keeping torso upright
-        alive_bonus = 0.1  # Small constant reward for staying alive
-        
-        # Define scales for different reward components - NEEDS CAREFUL TUNING
-        pose_scale = 2.0    # Scale for pose reward
-        vel_scale = 0.1     # Scale for velocity reward
-        end_eff_scale = 40  # Scale for end-effector reward
-        com_scale = 10      # Scale for center of mass reward
-        upright_scale = 5   # Scale for upright reward
-        
-        # 1. Pose Reward: Match joint angles with reference motion
+        # --- Weights (Tunable) ---
+        w_pose = 0.3       # Pose matching (Reduced)
+        w_vel = 0.05       # Velocity matching
+        w_end_eff = 0.1    # End-effector position matching
+        w_com = 0.1        # Center of mass tracking
+        w_upright = 0.2    # Keeping torso upright (Increased)
+        w_forward = 0.15   # Forward progress (Added)
+        alive_bonus = 0.1  # Constant reward for staying alive (Added)
+
+        # --- Scales (Tunable) ---
+        pose_scale = 2.0
+        vel_scale = 0.1
+        end_eff_scale = 40
+        com_scale = 10
+        upright_scale = 5 # Scale for upright reward component calculation
+        forward_scale = 2 # Scale for forward reward component calculation
+
+        total_reward = 0.0
+        self.reward_components = {} # Reset components dict
+
+        # --- Get Base/Root State ---
+        # Ensure self.humanoid.model_id is the correct body index
         try:
-            # Try using the base class's pose reward calculation if available
+            root_pos, root_orn = self.p_client.getBasePositionAndOrientation(self.humanoid.model_id)
+            root_lin_vel, root_ang_vel = self.p_client.getBaseVelocity(self.humanoid.model_id)
+        except Exception as e:
+             print(f"Error getting base state: {e}")
+             # Handle error: maybe return 0 reward or raise an exception
+             return 0.0 # Early exit if base state fails
+
+        # --- Calculate Reward Components ---
+
+        # 1. Pose Reward
+        try:
             if hasattr(self, '_calc_pose_reward'):
-                pose_reward = self._calc_pose_reward() * pose_scale
+                pose_reward = self._calc_pose_reward() # Base class method might return scaled value
+                # If not scaled by base method, apply scale: pose_reward = np.exp(-pose_scale * pose_error)
+                self.reward_components['pose'] = w_pose * pose_reward # Apply weight
+                total_reward += self.reward_components['pose']
             else:
-                # Placeholder for manual pose reward calculation
-                pose_reward = 0.0  # This should be replaced with actual calculation
-                print("Warning: No _calc_pose_reward method found, using placeholder.")
+                print("Warning: _calc_pose_reward method not found.")
+                self.reward_components['pose'] = 0.0
         except Exception as e:
             print(f"Error calculating pose reward: {e}")
-            pose_reward = 0.0
-        
-        # 2. Velocity Reward: Match joint velocities with reference motion
+            self.reward_components['pose'] = 0.0
+
+        # 2. Velocity Reward
         try:
-            # Try using the base class's velocity reward calculation if available
             if hasattr(self, '_calc_velocity_reward'):
-                velocity_reward = self._calc_velocity_reward() * vel_scale
+                velocity_reward = self._calc_velocity_reward() # Base class method might return scaled value
+                # If not scaled by base method, apply scale: velocity_reward = np.exp(-vel_scale * vel_error)
+                self.reward_components['velocity'] = w_vel * velocity_reward # Apply weight
+                total_reward += self.reward_components['velocity']
             else:
-                # Placeholder for manual velocity reward calculation
-                velocity_reward = 0.0  # This should be replaced with actual calculation
-                print("Warning: No _calc_velocity_reward method found, using placeholder.")
+                print("Warning: _calc_velocity_reward method not found.")
+                self.reward_components['velocity'] = 0.0
         except Exception as e:
             print(f"Error calculating velocity reward: {e}")
-            velocity_reward = 0.0
-        
-        # 3. End-Effector Reward: Match positions of hands and feet
+            self.reward_components['velocity'] = 0.0
+
+        # 3. End-Effector Reward (Feet + Hands)
         try:
             end_effector_reward = 0.0
-            end_effector_count = this_error = 0
-            
-            # Calculate error for each end-effector if methods are available
-            if hasattr(self, '_get_link_pos') and hasattr(self, '_get_ref_link_pos'):
-                for link_id in [self.left_foot_id, self.right_foot_id, self.left_hand_id, self.right_hand_id]:
+            if hasattr(self, '_calc_end_effector_reward'): # Check for specific base method
+                 end_effector_reward = self._calc_end_effector_reward()
+                 # If base method doesn't exist, manually calculate if possible
+            elif hasattr(self, '_get_link_pos') and hasattr(self, '_get_ref_link_pos'):
+                this_error = 0
+                count = 0
+                # Ensure link IDs are valid (not -1)
+                link_ids = [self.left_foot_id, self.right_foot_id, self.left_hand_id, self.right_hand_id]
+                valid_link_ids = [lid for lid in link_ids if lid != -1]
+
+                for link_id in valid_link_ids:
                     curr_pos = np.array(self._get_link_pos(link_id))
-                    ref_pos = np.array(self._get_ref_link_pos(link_id))
+                    ref_pos = np.array(self._get_ref_link_pos(link_id)) # Assumes this gets ref pos for current phase
                     this_error += np.sum((curr_pos - ref_pos) ** 2)
-                    end_effector_count += 1
-                
-                if end_effector_count > 0:
-                    avg_error = this_error / end_effector_count
+                    count += 1
+
+                if count > 0:
+                    avg_error = this_error / count
                     end_effector_reward = np.exp(-end_eff_scale * avg_error)
             else:
-                print("Warning: Methods for end-effector tracking not found, using placeholder.")
+                 print("Warning: End-effector tracking methods not found.")
+
+            self.reward_components['end_effector'] = w_end_eff * end_effector_reward # Apply weight
+            total_reward += self.reward_components['end_effector']
         except Exception as e:
             print(f"Error calculating end-effector reward: {e}")
-            end_effector_reward = 0.0
-        
-        # 4. Center of Mass (CoM) Reward: Match CoM position and velocity
+            self.reward_components['end_effector'] = 0.0
+
+        # 4. Center of Mass (CoM) Reward
         try:
             com_reward = 0.0
-            
-            if hasattr(self, '_get_com_pos') and hasattr(self, '_get_ref_com_pos'):
-                # Get current and reference CoM positions
-                com_pos = np.array(self._get_com_pos())
-                ref_com_pos = np.array(self._get_ref_com_pos())
-                
-                # Calculate error in CoM position (emphasize Z-axis height)
-                com_pos_error = np.sum((com_pos - ref_com_pos) ** 2)
-                
-                # If velocity methods are available, also match CoM velocity
-                if hasattr(self, '_get_com_vel') and hasattr(self, '_get_ref_com_vel'):
+            if hasattr(self, '_calc_com_reward'): # Check for specific base method
+                 com_reward = self._calc_com_reward()
+                 # Add manual calculation here if base method doesn't exist and helpers do
+            elif hasattr(self, '_get_com_pos') and hasattr(self, '_get_ref_com_pos'):
+                 com_pos = np.array(self._get_com_pos())
+                 ref_com_pos = np.array(self._get_ref_com_pos()) # Assumes ref for current phase
+                 com_pos_error = np.sum((com_pos - ref_com_pos) ** 2)
+                 # Optionally include velocity error if methods exist
+                 com_vel_error = 0.0
+                 if hasattr(self, '_get_com_vel') and hasattr(self, '_get_ref_com_vel'):
                     com_vel = np.array(self._get_com_vel())
                     ref_com_vel = np.array(self._get_ref_com_vel())
-                    
-                    # Calculate error in CoM velocity (emphasize X-axis forward motion)
-                    # Penalize Y-axis (sideways) velocity more
-                    com_vel_error = (com_vel[0] - ref_com_vel[0])**2 + \
-                                   3.0 * (com_vel[1] - ref_com_vel[1])**2 + \
-                                   (com_vel[2] - ref_com_vel[2])**2
-                    
-                    # Combine position and velocity errors
-                    com_error = com_pos_error + com_vel_error
-                else:
-                    com_error = com_pos_error
-                
-                com_reward = np.exp(-com_scale * com_error)
+                    com_vel_error = np.sum((com_vel - ref_com_vel) ** 2)
+
+                 com_error = com_pos_error + 0.1 * com_vel_error # Example weighting
+                 com_reward = np.exp(-com_scale * com_error)
             else:
-                print("Warning: Methods for CoM tracking not found, using placeholder.")
+                 print("Warning: CoM tracking methods not found.")
+
+            self.reward_components['com'] = w_com * com_reward # Apply weight
+            total_reward += self.reward_components['com']
         except Exception as e:
             print(f"Error calculating CoM reward: {e}")
-            com_reward = 0.0
-        
-        # 5. Upright Reward: Keep the torso upright
+            self.reward_components['com'] = 0.0
+
+        # 5. Upright Reward (Based on Torso Orientation)
         try:
             upright_reward = 0.0
-            
-            if hasattr(self, '_get_link_orientation'):
-                # Get torso orientation
+            # Ensure torso_link_id is valid
+            if self.torso_link_id != -1 and hasattr(self, '_get_link_orientation'):
                 torso_quat = self._get_link_orientation(self.torso_link_id)
-                
-                # Convert quaternion to rotation matrix
-                # This is a simplified method for extracting the up vector (Z-axis)
-                # in world coordinates from the quaternion
-                qw, qx, qy, qz = torso_quat
-                
-                # Calculate the dot product with world up vector [0,0,1]
-                # This gives the cosine of the angle between torso up and world up
-                up_vector_z = 2.0 * (qx*qz + qw*qy)
-                
-                # Apply reward function that peaks at 1 (when perfectly upright)
-                # and falls off exponentially as the torso tilts
-                upright_reward = np.exp(-upright_scale * (1.0 - up_vector_z)**2)
+            # If torso_link_id is invalid or method missing, try getting base orientation
+            elif self.torso_link_id == -1 : # Use base orientation if torso link is base
+                 torso_quat = root_orn
             else:
-                print("Warning: Method for getting link orientation not found, using placeholder.")
+                 print("Warning: Cannot get torso orientation for upright reward.")
+                 torso_quat = None # Indicate orientation couldn't be obtained
+
+            if torso_quat is not None:
+                # Calculate up vector's Z component from quaternion [x, y, z, w]
+                qx, qy, qz, qw = torso_quat[0], torso_quat[1], torso_quat[2], torso_quat[3]
+                # Simplified Z component of the rotated Z-axis (assumes passive rotation)
+                # For active rotation (frame rotates): rot_mat = self.p_client.getMatrixFromQuaternion(torso_quat); up_z = rot_mat[8]
+                # For passive rotation (vector rotates):
+                up_z = 1.0 - 2.0 * (qx*qx + qy*qy) # Z component of [0,0,1] rotated by torso_quat
+
+                # Reward measure based on Z component being close to 1
+                # Simple: reward positive alignment
+                upright_measure = up_z
+                upright_reward = max(0, upright_measure) # Reward positive alignment [0, 1]
+                # Alternative exponential: upright_reward = np.exp(-upright_scale * (1.0 - upright_measure)**2)
+
+            self.reward_components['upright'] = w_upright * upright_reward # Apply weight
+            total_reward += self.reward_components['upright']
         except Exception as e:
             print(f"Error calculating upright reward: {e}")
-            upright_reward = 0.0
-        
-        # Combine all reward components
-        total_reward = (
-            w_pose * pose_reward +
-            w_vel * velocity_reward +
-            w_end_eff * end_effector_reward +
-            w_com * com_reward +
-            w_upright * upright_reward +
-            alive_bonus
-        )
-        
-        # Store individual reward components
-        self.reward_components = {
-            'pose_reward': pose_reward,
-            'velocity_reward': velocity_reward,
-            'end_effector_reward': end_effector_reward,
-            'com_reward': com_reward,
-            'upright_reward': upright_reward,
-            'alive_bonus': alive_bonus,
-            'total_reward': total_reward
-        }
-        
+            self.reward_components['upright'] = 0.0
+
+        # 6. Forward Progress Reward (Based on Root Velocity) (NEW)
+        try:
+            # Reward positive velocity along the global X-axis
+            forward_vel = root_lin_vel[0]
+            # Scale velocity and apply weight
+            # Simple linear reward, scaled
+            norm_factor = 1.0 # Normalizing factor, tune as needed
+            forward_reward = forward_scale * np.tanh(forward_vel / norm_factor)
+            # You might want to clip or use tanh for stability:
+            # forward_reward = forward_scale * np.tanh(forward_vel / forward_scale) # Example tanh scaling
+
+            self.reward_components['forward'] = w_forward * forward_reward # Apply weight
+            total_reward += self.reward_components['forward']
+        except Exception as e:
+            print(f"Error calculating forward progress reward: {e}")
+            self.reward_components['forward'] = 0.0
+
+        # 7. Alive Bonus (NEW - ensure added)
+        self.reward_components['alive_bonus'] = alive_bonus
+        total_reward += self.reward_components['alive_bonus']
+
+        # Store the final total reward
+        self.reward_components['total_reward'] = total_reward
+
         return total_reward
 
 # Custom wrapper to handle the gym 0.26.2 API with stable-baselines3 1.2.0
 class GymAdapter(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
-        
-    def reset(self, **kwargs):
-        # Handle the gym 0.26.2 reset which returns (obs, info)
-        # but stable-baselines3 1.2.0 expects just obs
-        result = self.env.reset(**kwargs)
-        if isinstance(result, tuple) and len(result) == 2:
-            return result[0]  # Just return the observation
-        return result
-        
+        # Adapt observation space if needed (example: Dict -> Box)
+        if isinstance(env.observation_space, spaces.Dict):
+            # Flatten the Dict space into a Box space
+            # This requires knowing the keys and shapes within the Dict
+            # Example: Assuming 'obs' and 'achieved_goal' keys
+            # Adjust based on your actual Dict structure
+            low = np.concatenate([env.observation_space['obs'].low, env.observation_space['achieved_goal'].low])
+            high = np.concatenate([env.observation_space['obs'].high, env.observation_space['achieved_goal'].high])
+            self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
+
+            # Store the original observation keys for processing
+            self._obs_keys = list(env.observation_space.spaces.keys())
+        else:
+            # Keep the original space if it's not a Dict
+            self.observation_space = env.observation_space
+
+        self.action_space = env.action_space
+
     def step(self, action):
-        # Handle the gym 0.26.2 step which returns (obs, reward, terminated, truncated, info)
-        # but stable-baselines3 1.2.0 expects (obs, reward, done, info)
-        result = self.env.step(action)
-        if len(result) == 5:
-            obs, reward, terminated, truncated, info = result
+        # Call the environment's step method
+        # Handle potential difference in return values (4 vs 5)
+        step_result = self.env.step(action)
+        if len(step_result) == 5:
+            obs, reward, terminated, truncated, info = step_result # Newer gym API
             done = terminated or truncated
-            
-            # Pass through reward components if available
-            if hasattr(self.env, 'reward_components'):
-                info['reward_components'] = self.env.reward_components
-                
-            return obs, reward, done, info
-        elif len(result) == 4:
-            obs, reward, done, info = result
-            
-            # Pass through reward components if available
-            if hasattr(self.env, 'reward_components'):
-                info['reward_components'] = self.env.reward_components
-                
-            return result
-        
-        return result 
+        elif len(step_result) == 4:
+            obs, reward, done, info = step_result # Older gym API or base env specific
+            terminated = done # Assume termination is the same as done
+            truncated = False # Cannot determine truncation from older API
+        else:
+            raise ValueError(f"Unexpected number of values returned by self.env.step: {len(step_result)}")
+
+        # Process observation if it was a Dict
+        if isinstance(self.env.observation_space, spaces.Dict):
+            obs = self._flatten_obs(obs)
+
+        # Return in the expected format for stable-baselines3 v1.x (obs, reward, done, info)
+        # Note: SB3 v2+ uses the new 5-tuple format directly.
+        return obs, reward, done, info # Return 4 items
+
+    def reset(self, **kwargs):
+        # Call the environment's reset method
+        # Handle potential difference in return values (obs vs obs, info)
+        reset_result = self.env.reset(**kwargs)
+        if isinstance(reset_result, tuple) and len(reset_result) == 2:
+            obs, info = reset_result # Newer gym API
+        else:
+            obs = reset_result # Older gym API or base env specific
+            info = {} # Provide an empty info dict
+
+        # Process observation if it was a Dict
+        if isinstance(self.env.observation_space, spaces.Dict):
+            obs = self._flatten_obs(obs)
+
+        # Return observation (and info if needed, though SB3 v1.x primarily uses obs)
+        # Return 1 item as expected by older reset API used by SB3 v1.x
+        # If using SB3 v2+, return (obs, info)
+        return obs # Return 1 item
+
+    def _flatten_obs(self, obs_dict):
+        # Flatten the dictionary observation into a single numpy array
+        # Ensure the order matches the order used to define the Box space
+        return np.concatenate([obs_dict[key] for key in self._obs_keys])
+
+    # Forward other methods if necessary
+    def render(self, *args, **kwargs):
+        return self.env.render(*args, **kwargs)
+
+    def close(self):
+        return self.env.close()
+
+    def seed(self, seed=None):
+        # Pass the seed call to the underlying environment
+        # Adjust based on how the base env handles seeding
+        if hasattr(self.env, 'seed'):
+            return self.env.seed(seed)
+        else:
+            # Handle cases where the base env might use np_random directly
+            # This might involve setting env.np_random.seed(seed)
+            print("Warning: Base environment might not have a seed method. Seeding might not be fully applied.")
+            pass # Or implement more specific seeding logic if needed

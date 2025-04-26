@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Trained models
+*.h5
+*.ckpt
+*.pkl
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Model checkpoints
+models/*
+!models/.gitkeep
+custom_checkpoints/*
+!custom_checkpoints/.gitkeep
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# PyBullet specific
+*.obj
+*.urdf 

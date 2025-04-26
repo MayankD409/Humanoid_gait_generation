@@ -5,30 +5,7 @@ import numpy as np
 import argparse
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-from humanoid_env import HumanoidImitationEnv
-
-# Custom wrapper to handle the gym 0.26.2 API with stable-baselines3 1.2.0
-class GymAdapter(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        
-    def reset(self, **kwargs):
-        # Handle the gym 0.26.2 reset which returns (obs, info)
-        # but stable-baselines3 1.2.0 expects just obs
-        result = self.env.reset(**kwargs)
-        if isinstance(result, tuple) and len(result) == 2:
-            return result[0]  # Just return the observation
-        return result
-        
-    def step(self, action):
-        # Handle the gym 0.26.2 step which returns (obs, reward, terminated, truncated, info)
-        # but stable-baselines3 1.2.0 expects (obs, reward, done, info)
-        result = self.env.step(action)
-        if len(result) == 5:
-            obs, reward, terminated, truncated, info = result
-            done = terminated or truncated
-            return obs, reward, done, info
-        return result
+from humanoid_env import HumanoidImitationWalkEnv, GymAdapter
 
 # Custom info-capturing wrapper
 class InfoWrapper(gym.Wrapper):
@@ -124,8 +101,7 @@ def main():
     print("Loading model from {0}".format(model_path))
     
     # Create the environment
-    env = HumanoidImitationEnv(renders=args.render, motion_file=args.motion_file,
-                              rescale_actions=True, rescale_observations=True)
+    env = HumanoidImitationWalkEnv(renders=args.render, motion_file=args.motion_file)
     
     # Enable debug mode in the environment if it supports it
     if hasattr(env, 'debug'):
@@ -198,45 +174,41 @@ def main():
             step_count += 1
             
             if step_count % 100 == 0 or step_count == 1:
-                print("Step {0}, Current reward: {1:.2f}".format(step_count, episode_reward))
+                print(f"Step {step_count}: Reward: {reward[0]:.4f}, Total: {episode_reward:.4f}")
+                
+                # Print reward components if available
+                if 'reward_components' in info[0]:
+                    components = info[0]['reward_components']
+                    components_str = ", ".join(f"{k}: {v:.4f}" for k, v in components.items())
+                    print(f"Reward components: {components_str}")
             
-            if args.render:
-                # Sleep to slow down the visualization if slowmo is enabled
+            # Add delay for visualization if render is enabled
+            if args.render and args.slowmo > 0:
                 time.sleep(frame_delay)
-                
-            if done:
-                # Print detailed termination info
-                done_info = info[0] if isinstance(info, list) else info
-                reason = done_info.get('episode_end_reason', 'unknown')
-                print("Episode ended after {0} steps. Reason: {1}".format(step_count, reason))
-                print("Final info: {0}".format(done_info))
-                break
-                
+        
+        # Print episode stats
+        print("\nEpisode {0} completed:".format(episode+1))
+        print("  Steps: {0}".format(step_count))
+        print("  Total reward: {0:.4f}".format(episode_reward))
+        
+        # Print termination reason if available
+        last_info = step_infos[-1] if step_infos else {}
+        if 'episode_end_reason' in last_info:
+            print(f"  Termination reason: {last_info['episode_end_reason']}")
+        elif 'TimeLimit.truncated' in last_info:
+            print("  Termination reason: Time limit reached")
+        elif step_count >= args.max_steps:
+            print("  Termination reason: Reached maximum steps")
+        
         total_rewards.append(episode_reward)
         step_counts.append(step_count)
-        
-        print("Episode {0} finished after {1} steps with reward {2:.2f}".format(episode+1, step_count, episode_reward))
-        
-        # Print last few step infos if episode was short
-        if step_count < 10 and args.debug:
-            print("Step infos for short episode:")
-            for i, info in enumerate(step_infos):
-                print("Step {0} info: {1}".format(i+1, info))
     
-    # Calculate statistics
-    mean_reward = np.mean(total_rewards)
-    std_reward = np.std(total_rewards)
-    mean_steps = np.mean(step_counts)
-    std_steps = np.std(step_counts)
-    
-    print("\n===== Test Results =====")
-    print("Number of episodes: {0}".format(args.num_episodes))
-    print("Mean reward: {0:.2f} +/- {1:.2f}".format(mean_reward, std_reward))
-    print("Mean steps: {0:.2f} +/- {1:.2f}".format(mean_steps, std_steps))
-    print("========================")
-    
-    # Close the environment
-    env.close()
+    # Print overall stats
+    print("\nTesting complete!")
+    print("Average reward: {0:.4f}".format(np.mean(total_rewards)))
+    print("Average episode length: {0:.2f}".format(np.mean(step_counts)))
+    print("Rewards: {0}".format(total_rewards))
+    print("Episode lengths: {0}".format(step_counts))
 
 if __name__ == "__main__":
     main() 

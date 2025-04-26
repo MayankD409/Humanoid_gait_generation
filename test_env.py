@@ -7,7 +7,7 @@ from humanoid_env import HumanoidImitationEnv
 def main():
     # Create the environment
     print("Creating HumanoidImitationEnv environment...")
-    env = HumanoidImitationEnv(renders=True, motion_file='data/Walking.json')
+    env = HumanoidImitationEnv(renders=True, motion_file='data/Walking.json', rescale_observations=False)
     
     print(f"Observation space: {env.observation_space}")
     print(f"Action space: {env.action_space}")

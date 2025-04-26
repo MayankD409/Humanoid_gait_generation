@@ -232,7 +232,7 @@ def make_env(render=False, rank=0, seed=0):
     def _init():
         # Create the environment and wrap it with our adapter
         env = HumanoidImitationEnv(renders=render, motion_file=args.motion_file,
-                                  rescale_actions=True, rescale_observations=True)
+                                  rescale_actions=True, rescale_observations=False)
         env = GymAdapter(env)  # Add the adapter wrapper
         # Wrap environment with monitor
         env = Monitor(env, os.path.join(run_log_dir, f"train_{rank}"), 
@@ -244,7 +244,7 @@ def make_env(render=False, rank=0, seed=0):
 
 # Create evaluation environment with our wrapper
 eval_env = HumanoidImitationEnv(renders=args.render, motion_file=args.motion_file,
-                              rescale_actions=True, rescale_observations=True)
+                              rescale_actions=True, rescale_observations=False)
 eval_env = GymAdapter(eval_env)  # Add the adapter wrapper
 eval_env = Monitor(eval_env, os.path.join(run_log_dir, 'eval'))
 

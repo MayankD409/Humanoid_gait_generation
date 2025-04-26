@@ -49,18 +49,21 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback,
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.monitor import Monitor
-from humanoid_env import HumanoidImitationEnv
+from humanoid_env import HumanoidImitationWalkEnv, GymAdapter
 
 # Custom callback to print training metrics at the end of each iteration
 class IterationMetricsCallback(BaseCallback):
-    def __init__(self, verbose=0, timesteps_per_iteration=10000):
+    def __init__(self, verbose=0, timesteps_per_iteration=10000, start_iteration=0):
         super(IterationMetricsCallback, self).__init__(verbose)
         self.timesteps_per_iteration = timesteps_per_iteration
         self.episode_rewards = []
         self.episode_lengths = []
-        self.current_iteration = 0
+        self.current_iteration = start_iteration  # Start from a specific iteration number
         self.start_time = time.time()
         self.iteration_start_time = time.time()
+        
+        # New: For tracking reward components
+        self.reward_comp_totals = {}
     
     def _on_step(self):
         # Collect episode stats
@@ -68,6 +71,13 @@ class IterationMetricsCallback(BaseCallback):
             if 'episode' in info:
                 self.episode_rewards.append(info['episode']['r'])
                 self.episode_lengths.append(info['episode']['l'])
+            
+            # New: Collect reward components if available
+            if 'reward_components' in info:
+                for comp_name, comp_value in info['reward_components'].items():
+                    if comp_name not in self.reward_comp_totals:
+                        self.reward_comp_totals[comp_name] = []
+                    self.reward_comp_totals[comp_name].append(comp_value)
         
         # Check if we've completed an iteration
         if self.n_calls % self.timesteps_per_iteration == 0:
@@ -91,6 +101,17 @@ class IterationMetricsCallback(BaseCallback):
                 print(f"  Episodes in this iteration: {len(recent_rewards)}")
                 print(f"  Mean reward: {mean_reward:.2f}")
                 print(f"  Mean episode length: {mean_length:.2f}")
+                
+                # New: Print mean reward components if available
+                if self.reward_comp_totals:
+                    print("  Reward components:")
+                    for comp_name, values in self.reward_comp_totals.items():
+                        if values:  # Check if we have any values
+                            mean_value = np.mean(values)
+                            print(f"    {comp_name}: {mean_value:.4f}")
+                    # Reset component accumulators for next iteration
+                    self.reward_comp_totals = {}
+                
                 print(f"  Iteration time: {iteration_time:.2f} seconds")
                 print(f"  FPS: {self.timesteps_per_iteration / iteration_time:.2f}")
                 print(f"  Total time elapsed: {total_time:.2f} seconds")
@@ -109,35 +130,12 @@ class IterationMetricsCallback(BaseCallback):
             
         return True
 
-# Custom wrapper to handle the gym 0.26.2 API with stable-baselines3 1.2.0
-class GymAdapter(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        
-    def reset(self, **kwargs):
-        # Handle the gym 0.26.2 reset which returns (obs, info)
-        # but stable-baselines3 1.2.0 expects just obs
-        result = self.env.reset(**kwargs)
-        if isinstance(result, tuple) and len(result) == 2:
-            return result[0]  # Just return the observation
-        return result
-        
-    def step(self, action):
-        # Handle the gym 0.26.2 step which returns (obs, reward, terminated, truncated, info)
-        # but stable-baselines3 1.2.0 expects (obs, reward, done, info)
-        result = self.env.step(action)
-        if len(result) == 5:
-            obs, reward, terminated, truncated, info = result
-            done = terminated or truncated
-            return obs, reward, done, info
-        return result
-
 # Parse arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--iterations', type=int, default=1000, 
-                    help='Number of iterations to train (each iteration is 10000 timesteps by default)')
+parser.add_argument('--timesteps', type=int, default=10000000, 
+                    help='Total number of timesteps to train')
 parser.add_argument('--timesteps_per_iteration', type=int, default=10000,
-                    help='Number of timesteps per iteration')
+                    help='Number of timesteps per iteration (for logging purposes)')
 parser.add_argument('--log_dir', type=str, default='logs', 
                     help='Directory to save logs')
 parser.add_argument('--model_dir', type=str, default='models', 
@@ -156,15 +154,75 @@ parser.add_argument('--n_envs', type=int, default=8,
                     help='Number of environments to run in parallel')
 parser.add_argument('--run_name', type=str, default=None,
                     help='Custom name for this training run (default: timestamp)')
+# Add new argument for continuing from a checkpoint
+parser.add_argument('--continue_from', type=str, default=None,
+                    help='Path to model file to continue training from (e.g., models/train_run_2/ppo_humanoid_final.zip)')
+parser.add_argument('--reset_num_timesteps', action='store_false',
+                    help='If set, do not reset the number of timesteps (default: reset)')
+parser.add_argument('--additional_timesteps', type=int, default=None,
+                    help='Number of additional timesteps to train when continuing from a checkpoint')
 args = parser.parse_args()
 
-# Calculate total timesteps from iterations
-total_timesteps = args.iterations * args.timesteps_per_iteration
+# Use total_timesteps directly
+total_timesteps = args.timesteps
 
-# Create a unique run name with timestamp if not provided
+# If we're continuing from a checkpoint, extract the step count
+start_iteration = 0
+start_steps = 0
+if args.continue_from:
+    # Try to extract the step count from the filename
+    checkpoint_path = args.continue_from
+    if '_steps_' in checkpoint_path:
+        try:
+            # Extract the step count from the file name format: ppo_humanoid_steps_XXXXXX_steps.zip
+            steps_str = checkpoint_path.split('_steps_')[1].split('_steps.zip')[0]
+            start_steps = int(steps_str)
+            start_iteration = start_steps // args.timesteps_per_iteration
+            print(f"Continuing from checkpoint at step {start_steps} (iteration {start_iteration})")
+        except (ValueError, IndexError):
+            print("Could not parse step count from checkpoint filename, starting from iteration 0")
+    else:
+        # Try to parse if it's the final model (which doesn't have steps in the filename)
+        # Look for other checkpoint files in the same directory to estimate progress
+        checkpoint_dir = os.path.dirname(checkpoint_path)
+        if os.path.isdir(checkpoint_dir):
+            checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.startswith('ppo_humanoid_steps_') and f.endswith('_steps.zip')]
+            if checkpoint_files:
+                # Find the file with the highest step count
+                highest_step_file = max(checkpoint_files, key=lambda f: int(f.split('_steps_')[1].split('_steps.zip')[0]))
+                try:
+                    steps_str = highest_step_file.split('_steps_')[1].split('_steps.zip')[0]
+                    start_steps = int(steps_str)
+                    start_iteration = start_steps // args.timesteps_per_iteration
+                    print(f"Estimated progress from checkpoint directory: step {start_steps} (iteration {start_iteration})")
+                except (ValueError, IndexError):
+                    print("Could not parse step count from checkpoint files, starting from iteration 0")
+            else:
+                print("No step information found in checkpoint directory, starting from iteration 0")
+        else:
+            print("Continuing from checkpoint, starting from iteration 0")
+
+# If additional_timesteps is specified, adjust total_timesteps
+if args.additional_timesteps is not None and args.continue_from:
+    # Calculate new total including already completed steps
+    total_timesteps = start_steps + args.additional_timesteps
+    print(f"Training for {args.additional_timesteps} additional timesteps")
+    print(f"Total timesteps (including already completed): {total_timesteps}")
+
+# Create a unique run name with timestamp if not provided or reuse from checkpoint
 if args.run_name is None:
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.run_name = f"fresh_{timestamp}"
+    if args.continue_from:
+        # Try to extract run name from checkpoint path
+        checkpoint_dir = os.path.dirname(args.continue_from)
+        if os.path.isdir(checkpoint_dir):
+            # Use the directory name as the run name
+            args.run_name = os.path.basename(checkpoint_dir)
+            print(f"Reusing run name from checkpoint: {args.run_name}")
+        
+    # If still no run name, create a new one with timestamp
+    if args.run_name is None:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        args.run_name = f"fresh_{timestamp}"
 
 # Create directories with subdirectories for this run
 run_log_dir = os.path.join(args.log_dir, args.run_name)
@@ -185,20 +243,30 @@ config_log = os.path.join(run_log_dir, "training_config.txt")
 with open(config_log, 'w') as f:
     f.write(f"Training run: {args.run_name}\n")
     f.write(f"Timestamp: {datetime.datetime.now()}\n")
-    f.write(f"Iterations: {args.iterations}\n")
-    f.write(f"Timesteps per iteration: {args.timesteps_per_iteration}\n")
-    f.write(f"Total timesteps: {total_timesteps}\n")
+    
+    if args.additional_timesteps is not None and args.continue_from:
+        f.write(f"Additional timesteps: {args.additional_timesteps}\n")
+        f.write(f"Timesteps per iteration (for logging): {args.timesteps_per_iteration}\n")
+        f.write(f"Previously completed steps: {start_steps}\n")
+        f.write(f"Previously completed iterations: {start_iteration}\n")
+        f.write(f"Total timesteps (including already completed): {total_timesteps}\n")
+    else:
+        f.write(f"Total timesteps: {total_timesteps}\n")
+        f.write(f"Timesteps per iteration (for logging): {args.timesteps_per_iteration}\n")
+    
     f.write(f"Motion file: {args.motion_file}\n")
     f.write(f"Environments: {args.n_envs}\n")
     f.write(f"Eval frequency: {args.eval_freq}\n")
     f.write(f"Save frequency: {args.save_freq}\n")
+    if args.continue_from:
+        f.write(f"Continuing from checkpoint: {args.continue_from}\n")
+        f.write(f"Starting from iteration: {start_iteration}\n")
 
 # Create environment function for vectorized env
 def make_env(render=False, rank=0, seed=0):
     def _init():
         # Create the environment and wrap it with our adapter
-        env = HumanoidImitationEnv(renders=render, motion_file=args.motion_file,
-                                  rescale_actions=True, rescale_observations=True)
+        env = HumanoidImitationWalkEnv(renders=render, motion_file=args.motion_file)
         env = GymAdapter(env)  # Add the adapter wrapper
         # Wrap environment with monitor
         env = Monitor(env, os.path.join(run_log_dir, f"train_{rank}"), 
@@ -209,9 +277,8 @@ def make_env(render=False, rank=0, seed=0):
     return _init
 
 # Create evaluation environment with our wrapper
-eval_env = HumanoidImitationEnv(renders=args.render, motion_file=args.motion_file,
-                              rescale_actions=True, rescale_observations=True)
-eval_env = GymAdapter(eval_env)  # Add the adapter wrapper
+eval_env_raw = HumanoidImitationWalkEnv(renders=args.render, motion_file=args.motion_file)
+eval_env = GymAdapter(eval_env_raw)  # Add the adapter wrapper
 eval_env = Monitor(eval_env, os.path.join(run_log_dir, 'eval'))
 
 # Convert to vector environment for compatibility with VecNormalize
@@ -244,10 +311,11 @@ timestep_checkpoint_callback = CheckpointCallback(
     name_prefix='ppo_humanoid_steps'
 )
 
-# Create the iteration metrics callback
+# Create the iteration metrics callback with the appropriate starting iteration
 iteration_metrics_callback = IterationMetricsCallback(
     verbose=1, 
-    timesteps_per_iteration=args.timesteps_per_iteration
+    timesteps_per_iteration=args.timesteps_per_iteration,
+    start_iteration=start_iteration
 )
 
 # Combine all callbacks
@@ -258,31 +326,78 @@ callbacks = [
     iteration_metrics_callback
 ]
 
-# Create the PPO model with optimized hyperparameters
-model = PPO(
-    policy="MlpPolicy",
-    env=env,
-    learning_rate=5e-4,        # Increased learning rate
-    n_steps=1024,              # Smaller n_steps for more frequent updates
-    batch_size=256,            # Larger batch size for more stable gradients
-    gamma=0.99,                # Future reward discount factor
-    ent_coef=0.01,             # Increased entropy for more exploration
-    clip_range=0.3,            # Wider clip range 
-    vf_coef=0.5,
-    max_grad_norm=1.0,
-    policy_kwargs=dict(
-        net_arch=[dict(pi=[256, 256], vf=[256, 256])],  # Deeper network
-        activation_fn=torch.nn.ReLU
-    ),
-    tensorboard_log=run_log_dir,
-    verbose=1
-)
+# Load or create the agent
+if args.continue_from:
+    print(f"Loading model from checkpoint: {args.continue_from}")
+    model = PPO.load(
+        args.continue_from,
+        env=env,
+        tensorboard_log=run_log_dir,
+        verbose=1
+    )
+    
+    # Search for a vec_normalize.pkl file in the same directory as the checkpoint
+    checkpoint_dir = os.path.dirname(args.continue_from)
+    vec_normalize_path = os.path.join(checkpoint_dir, "vec_normalize.pkl")
+    
+    if os.path.exists(vec_normalize_path):
+        print(f"Loading normalization stats from: {vec_normalize_path}")
+        env = VecNormalize.load(vec_normalize_path, env)
+        # Don't update the normalization statistics during testing
+        env.training = True
+        
+        # Also load normalization for eval env
+        eval_env = VecNormalize.load(vec_normalize_path, eval_env)
+        eval_env.training = False
+    else:
+        print("Warning: No vec_normalize.pkl file found. Using new normalization stats.")
+else:
+    # Create the PPO model with optimized hyperparameters
+    model = PPO(
+        policy="MlpPolicy",
+        env=env,
+        learning_rate=3e-4,        # Updated learning rate
+        n_steps=1024,              # Adjusted n_steps
+        batch_size=256,            # Larger batch size for more stable gradients
+        gamma=0.99,                # Future reward discount factor
+        ent_coef=0.001,            # Updated entropy coefficient
+        clip_range=0.2,            # Standard clip range
+        vf_coef=0.5,
+        max_grad_norm=0.5,         # Standard max gradient norm
+        policy_kwargs=dict(
+            net_arch=[dict(pi=[256, 256], vf=[256, 256])],  # Deeper network
+            activation_fn=torch.nn.ReLU
+        ),
+        tensorboard_log=run_log_dir,
+        verbose=1
+    )
+    
+    # Log hyperparameters to training config
+    with open(config_log, 'a') as f:
+        f.write("\nPPO Hyperparameters:\n")
+        f.write(f"  learning_rate: {3e-4}\n")
+        f.write(f"  n_steps: {1024}\n")
+        f.write(f"  batch_size: {256}\n")
+        f.write(f"  gamma: {0.99}\n")
+        f.write(f"  ent_coef: {0.001}\n")
+        f.write(f"  clip_range: {0.2}\n")
+        f.write(f"  max_grad_norm: {0.5}\n")
 
 # Train the model
 print(f"Starting training run: {args.run_name}")
+print(f"Logs will be saved to: {run_log_dir}")
+print(f"Models will be saved to: {run_model_dir}")
+
+if args.additional_timesteps is not None and args.continue_from:
+    print(f"Training for {args.additional_timesteps} additional timesteps")
+    print(f"Total timesteps (including already completed): {total_timesteps}")
+else:
+    print(f"Training for a total of {total_timesteps} timesteps")
+
 model.learn(
     total_timesteps=total_timesteps,
-    callback=callbacks
+    callback=callbacks,
+    reset_num_timesteps=args.reset_num_timesteps
 )
 
 # Save the final model

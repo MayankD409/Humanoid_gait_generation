@@ -132,7 +132,7 @@ class IterationMetricsCallback(BaseCallback):
 
 # Parse arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--timesteps', type=int, default=5000, 
+parser.add_argument('--timesteps', type=int, default=10000000, 
                     help='Total number of timesteps to train')
 parser.add_argument('--timesteps_per_iteration', type=int, default=10000,
                     help='Number of timesteps per iteration (for logging purposes)')
@@ -356,30 +356,30 @@ else:
     model = PPO(
         policy="MlpPolicy",
         env=env,
-        learning_rate=3e-4,        # Updated learning rate
-        n_steps=1024,              # Adjusted n_steps
-        batch_size=256,            # Larger batch size for more stable gradients
+        learning_rate=1e-4,        # Lowered learning rate for potentially better tuning
+        n_steps=2048,              # Increase for stability
+        batch_size=512,            # Increase for stability
         gamma=0.99,                # Future reward discount factor
-        ent_coef=0.001,            # Updated entropy coefficient
+        ent_coef=0.005,            # MODERATE Increase entropy coefficient
         clip_range=0.2,            # Standard clip range
         vf_coef=0.5,
-        max_grad_norm=0.5,         # Standard max gradient norm
+        max_grad_norm=0.5,         # Keep original
         policy_kwargs=dict(
-            net_arch=[dict(pi=[256, 256], vf=[256, 256])],  # Deeper network
+            net_arch=[dict(pi=[256, 256], vf=[256, 256])], # Keep original architecture
             activation_fn=torch.nn.ReLU
         ),
-        tensorboard_log=run_log_dir,
+        tensorboard_log=run_log_dir, # This will point to the new run's log dir
         verbose=1
     )
     
     # Log hyperparameters to training config
     with open(config_log, 'a') as f:
-        f.write("\nPPO Hyperparameters:\n")
-        f.write(f"  learning_rate: {3e-4}\n")
-        f.write(f"  n_steps: {1024}\n")
-        f.write(f"  batch_size: {256}\n")
+        f.write("\nPPO Hyperparameters (Set 2 Tuning - Lower LR):\n") # Note the change
+        f.write(f"  learning_rate: {1e-4}\n") # Updated
+        f.write(f"  n_steps: {2048}\n")
+        f.write(f"  batch_size: {512}\n")
         f.write(f"  gamma: {0.99}\n")
-        f.write(f"  ent_coef: {0.001}\n")
+        f.write(f"  ent_coef: {0.005}\n") 
         f.write(f"  clip_range: {0.2}\n")
         f.write(f"  max_grad_norm: {0.5}\n")
 

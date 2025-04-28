@@ -108,13 +108,13 @@ class HumanoidImitationWalkEnv(HumanoidDeepMimicWalkBulletEnv):
             float: The total reward for the current state
         """
         # --- Weights (Tunable) ---
-        w_pose = 0.3       # Pose matching (Reduced)
-        w_vel = 0.05       # Velocity matching
-        w_end_eff = 0.1    # End-effector position matching
-        w_com = 0.1        # Center of mass tracking
-        w_upright = 0.2    # Keeping torso upright (Increased)
-        w_forward = 0.15   # Forward progress (Added)
-        alive_bonus = 0.1  # Constant reward for staying alive (Added)
+        w_pose = 0.25      # Pose matching (Increased slightly)
+        w_vel = 0.05       # Velocity matching (Keep)
+        w_end_eff = 0.15   # End-effector position matching (Slight increase)
+        w_com = 0.1        # Center of mass tracking (Keep)
+        w_upright = 0.15   # Keeping torso upright (Reduced)
+        w_forward = 0.3    # Forward progress (Reduced from 0.4)
+        alive_bonus = 0.2  # Constant reward for staying alive (Increased)
 
         # --- Scales (Tunable) ---
         pose_scale = 2.0

@@ -372,7 +372,7 @@ class GymAdapter(gym.Wrapper):
                 # Convert the observation if it's a dictionary
                 if isinstance(obs, dict):
                     obs = self._flatten_obs(obs)
-                
+
                 return obs, reward, done, truncated, info
             else:  # Traditional 4-element return
                 obs, reward, done, info = step_result

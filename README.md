@@ -282,4 +282,97 @@ env.norm_reward = False
 - Use the same motion file for testing as was used during training
 - Ensure the vector normalization file matches the model you're testing
 - GPU acceleration is only available if CUDA-capable hardware is detected
-- For best performance with the GPU test script, ensure you have the latest CUDA and cuDNN libraries installed 
+- For best performance with the GPU test script, ensure you have the latest CUDA and cuDNN libraries installed
+
+## Prerequisites
+
+- Docker
+- NVIDIA Docker support (for GPU acceleration)
+
+## Quick Start with Docker
+
+### Building the Docker Image
+
+```bash
+# Clone the repository
+git clone <your-repository-url>
+cd humanoid_imitation
+
+# Build the Docker image
+docker build -t humanoid-imitation .
+```
+
+### Running with Docker
+
+```bash
+# Basic run with default parameters
+docker run --gpus all -it \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/data:/app/data \
+  humanoid-imitation python3 train.py --run_name my_run --n_envs 8
+```
+
+### Using Docker Compose
+
+```bash
+# Run with the default parameters in docker-compose.yml
+docker-compose up
+
+# Run with custom parameters
+docker-compose run humanoid-imitation python3 train.py --run_name custom_run --n_envs 8 --timesteps 5000000
+```
+
+### Continuing Training from a Checkpoint
+
+```bash
+docker run --gpus all -it \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/data:/app/data \
+  humanoid-imitation python3 train.py \
+  --continue_from models/train_run_2/ppo_humanoid_steps_54400000_steps.zip \
+  --run_name continued_run \
+  --additional_timesteps 1000000 \
+  --n_envs 8
+```
+
+## Training Parameters
+
+- `--run_name`: Name for the training run (default: timestamp)
+- `--n_envs`: Number of parallel environments (default: 8)
+- `--timesteps`: Total number of timesteps to train (default: 10000000)
+- `--additional_timesteps`: Number of additional timesteps when continuing training
+- `--continue_from`: Path to checkpoint to continue training from
+- `--eval_freq`: Evaluate the model every n steps (default: 10000)
+- `--save_freq`: Save the model every n steps (default: 100000)
+- `--motion_file`: Path to motion file to imitate (default: data/Walking.json)
+
+For more parameters, run:
+```bash
+docker run --rm humanoid-imitation python3 train.py --help
+```
+
+## Project Structure
+
+```
+humanoid_imitation/
+├── train.py                  # Main training script
+├── humanoid_env.py           # Environment implementation
+├── data/                     # Motion files and reference data
+├── models/                   # Saved model checkpoints
+├── logs/                     # Training logs and tensorboard files
+├── Dockerfile                # Docker configuration
+└── docker-compose.yml        # Docker Compose configuration
+```
+
+## Viewing TensorBoard Logs
+
+You can use TensorBoard to visualize training progress:
+
+```bash
+# On your host machine (not in Docker)
+tensorboard --logdir=./logs
+```
+
+Then open your browser at http://localhost:6006/ to view the metrics. 

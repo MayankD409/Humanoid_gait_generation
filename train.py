@@ -360,12 +360,12 @@ else:
         n_steps=2048,              # Increase for stability
         batch_size=512,            # Increase for stability
         gamma=0.99,                # Future reward discount factor
-        ent_coef=0.005,            # MODERATE Increase entropy coefficient
+        ent_coef=0.005,            # Standard entropy coefficient
         clip_range=0.2,            # Standard clip range
         vf_coef=0.5,
         max_grad_norm=0.5,         # Keep original
         policy_kwargs=dict(
-            net_arch=[dict(pi=[256, 256], vf=[256, 256])], # Keep original architecture
+            net_arch=[dict(pi=[512, 512], vf=[512, 512])], # Increased network size
             activation_fn=torch.nn.ReLU
         ),
         tensorboard_log=run_log_dir, # This will point to the new run's log dir
@@ -374,14 +374,15 @@ else:
     
     # Log hyperparameters to training config
     with open(config_log, 'a') as f:
-        f.write("\nPPO Hyperparameters (Set 2 Tuning - Lower LR):\n") # Note the change
-        f.write(f"  learning_rate: {1e-4}\n") # Updated
+        f.write("\nPPO Hyperparameters (Set 3 - Larger Net, Pose Focus Rewards):\n") # Note the change
+        f.write(f"  learning_rate: {1e-4}\n") # Keep lower LR
         f.write(f"  n_steps: {2048}\n")
         f.write(f"  batch_size: {512}\n")
         f.write(f"  gamma: {0.99}\n")
-        f.write(f"  ent_coef: {0.005}\n") 
+        f.write(f"  ent_coef: {0.005}\n") # Keep standard entropy
         f.write(f"  clip_range: {0.2}\n")
         f.write(f"  max_grad_norm: {0.5}\n")
+        f.write(f"  net_arch: [512, 512]\n") # Log new architecture
 
 # Train the model
 print(f"Starting training run: {args.run_name}")

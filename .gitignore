@@ -43,8 +43,7 @@ logs/*
 !logs/.gitkeep
 
 # Model checkpoints
-models/*
-!models/.gitkeep
+models/
 custom_checkpoints/*
 !custom_checkpoints/.gitkeep
 

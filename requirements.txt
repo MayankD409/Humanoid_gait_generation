@@ -1,5 +1,19 @@
-numpy>=1.18.0
-gym==0.21.0
-pybullet>=3.0.9
-stable-baselines3>=1.1.0,<2.0.0
-tensorboard>=2.5.0 
+# Core dependencies
+numpy>=1.26.4
+gym==0.26.2
+pybullet>=3.2.7
+stable-baselines3==1.2.0
+
+# PyTorch (matches the installed version with CUDA support)
+torch>=2.5.1
+
+# TensorFlow (used for GPU detection in train.py)
+tensorflow>=2.15.0
+
+# Visualization
+tensorboard>=2.11.2
+
+# Other dependencies used by stable-baselines3
+cloudpickle
+matplotlib
+pandas 

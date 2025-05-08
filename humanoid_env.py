@@ -108,21 +108,23 @@ class HumanoidImitationWalkEnv(HumanoidDeepMimicWalkBulletEnv):
             float: The total reward for the current state
         """
         # --- Weights (Tunable) ---
-        w_pose = 0.3       # Pose matching (Reduced)
-        w_vel = 0.05       # Velocity matching
-        w_end_eff = 0.1    # End-effector position matching
-        w_com = 0.1        # Center of mass tracking
-        w_upright = 0.2    # Keeping torso upright (Increased)
-        w_forward = 0.15   # Forward progress (Added)
-        alive_bonus = 0.1  # Constant reward for staying alive (Added)
+        w_pose = 0.15        # Decreased pose matching to reduce over-constraint
+        w_vel = 0.10         # Velocity matching (Same)
+        w_end_eff = 0.20     # Increased end-effector position matching for better foot placement
+        w_com = 0.15         # Increased center of mass tracking for better balance
+        w_upright = 0.20     # Increased for stability
+        w_forward = 0.30     # Further increased forward progress to encourage walking
+        w_balance = 0.15     # New: reward for maintaining balance
+        alive_bonus = 0.10   # Increased survival bonus
 
         # --- Scales (Tunable) ---
-        pose_scale = 2.0
-        vel_scale = 0.1
-        end_eff_scale = 40
-        com_scale = 10
-        upright_scale = 5 # Scale for upright reward component calculation
-        forward_scale = 2 # Scale for forward reward component calculation
+        pose_scale = 1.0     # Reduced to be less punishing for minor deviations
+        vel_scale = 0.1      # Keep the same
+        end_eff_scale = 20   # Reduced to be less punishing
+        com_scale = 5        # Reduced to be less punishing
+        upright_scale = 3    # Same
+        forward_scale = 5    # Increased to encourage forward motion
+        balance_scale = 10   # Scale for balance reward
 
         total_reward = 0.0
         self.reward_components = {} # Reset components dict
@@ -248,10 +250,11 @@ class HumanoidImitationWalkEnv(HumanoidDeepMimicWalkBulletEnv):
                 up_z = 1.0 - 2.0 * (qx*qx + qy*qy) # Z component of [0,0,1] rotated by torso_quat
 
                 # Reward measure based on Z component being close to 1
-                # Simple: reward positive alignment
-                upright_measure = up_z
-                upright_reward = max(0, upright_measure) # Reward positive alignment [0, 1]
-                # Alternative exponential: upright_reward = np.exp(-upright_scale * (1.0 - upright_measure)**2)
+                # More punishment for tilting: (1 - up_z) is error, then squared
+                upright_error = (1.0 - up_z) ** 2 
+                upright_reward = np.exp(-upright_scale * upright_error)
+            else:
+                upright_reward = 0.0 # Default if no orientation available
 
             self.reward_components['upright'] = w_upright * upright_reward # Apply weight
             total_reward += self.reward_components['upright']
@@ -259,31 +262,74 @@ class HumanoidImitationWalkEnv(HumanoidDeepMimicWalkBulletEnv):
             print(f"Error calculating upright reward: {e}")
             self.reward_components['upright'] = 0.0
 
-        # 6. Forward Progress Reward (Based on Root Velocity) (NEW)
+        # 6. NEW: Balance Reward (Based on Angular Velocity)
         try:
-            # Reward positive velocity along the global X-axis
-            forward_vel = root_lin_vel[0]
-            # Scale velocity and apply weight
-            # Simple linear reward, scaled
-            norm_factor = 1.0 # Normalizing factor, tune as needed
-            forward_reward = forward_scale * np.tanh(forward_vel / norm_factor)
-            # You might want to clip or use tanh for stability:
-            # forward_reward = forward_scale * np.tanh(forward_vel / forward_scale) # Example tanh scaling
+            balance_reward = 0.0
+            # Use root angular velocity to measure balance
+            if root_ang_vel is not None:
+                # Lower angular velocity = better balance
+                ang_vel_magnitude = np.linalg.norm(root_ang_vel)
+                balance_error = ang_vel_magnitude ** 2  # Square to emphasize large angular velocities
+                balance_reward = np.exp(-balance_scale * balance_error)
+            else:
+                balance_reward = 0.0
+                
+            self.reward_components['balance'] = w_balance * balance_reward
+            total_reward += self.reward_components['balance']
+        except Exception as e:
+            print(f"Error calculating balance reward: {e}")
+            self.reward_components['balance'] = 0.0
 
-            self.reward_components['forward'] = w_forward * forward_reward # Apply weight
+        # 7. Forward Progress Reward
+        try:
+            forward_reward = 0.0
+            if hasattr(self, '_calc_forward_reward'): # Check for method in base class
+                forward_reward = self._calc_forward_reward()
+            # Otherwise, use simple heuristic based on forward (X) component of velocity
+            elif root_lin_vel is not None:
+                # Reward for positive forward velocity
+                forward_vel = root_lin_vel[0] # Assuming X is forward
+                # Non-linear reward: higher reward for maintaining a good walking pace
+                # Too slow or too fast are both suboptimal
+                target_vel = 1.0  # Target velocity (m/s)
+                vel_error = (forward_vel - target_vel) ** 2
+                forward_reward = np.exp(-forward_scale * vel_error)
+                # Add bonus for positive forward movement
+                if forward_vel > 0:
+                    forward_reward += 0.2 * forward_vel
+            else:
+                forward_reward = 0.0
+
+            self.reward_components['forward'] = w_forward * forward_reward
             total_reward += self.reward_components['forward']
         except Exception as e:
-            print(f"Error calculating forward progress reward: {e}")
+            print(f"Error calculating forward reward: {e}")
             self.reward_components['forward'] = 0.0
 
-        # 7. Alive Bonus (NEW - ensure added)
-        self.reward_components['alive_bonus'] = alive_bonus
-        total_reward += self.reward_components['alive_bonus']
+        # 8. Alive Bonus (Constant reward for not falling)
+        self.reward_components['alive'] = alive_bonus
+        total_reward += alive_bonus
 
-        # Store the final total reward
-        self.reward_components['total_reward'] = total_reward
+        # Apply dynamic reward scaling based on performance
+        # If the model is doing well already, make rewards more targeted
+        if total_reward > 0.75:  
+            # Increase forward progress weight as performance improves
+            total_reward = 0.7 * total_reward + 0.3 * self.reward_components['forward']
 
         return total_reward
+
+    def step(self, action):
+        """
+        Override the step method to include reward components in the info dict.
+        """
+        # Call parent step method
+        obs, reward, done, info = super().step(action)
+        
+        # Add reward components to info
+        if hasattr(self, 'reward_components'):
+            info['reward_components'] = self.reward_components
+            
+        return obs, reward, done, info
 
 # Custom wrapper to handle the gym 0.26.2 API with stable-baselines3 1.2.0
 class GymAdapter(gym.Wrapper):
@@ -310,24 +356,44 @@ class GymAdapter(gym.Wrapper):
     def step(self, action):
         # Call the environment's step method
         # Handle potential difference in return values (4 vs 5)
-        step_result = self.env.step(action)
-        if len(step_result) == 5:
-            obs, reward, terminated, truncated, info = step_result # Newer gym API
-            done = terminated or truncated
-        elif len(step_result) == 4:
-            obs, reward, done, info = step_result # Older gym API or base env specific
-            terminated = done # Assume termination is the same as done
-            truncated = False # Cannot determine truncation from older API
-        else:
-            raise ValueError(f"Unexpected number of values returned by self.env.step: {len(step_result)}")
+        try:
+            step_result = self.env.step(action)
+            
+            if len(step_result) == 5:  # If step returns obs, reward, done, truncated, info
+                obs, reward, done, truncated, info = step_result
+                
+                # Add reward components if available in the base environment
+                if hasattr(self.env, 'reward_components'):
+                    info['reward_components'] = self.env.reward_components
+                
+                # Store true reward (before potential normalization in wrapper)
+                info['episode_real_reward'] = reward
+                
+                # Convert the observation if it's a dictionary
+                if isinstance(obs, dict):
+                    obs = self._flatten_obs(obs)
 
-        # Process observation if it was a Dict
-        if isinstance(self.env.observation_space, spaces.Dict):
-            obs = self._flatten_obs(obs)
-
-        # Return in the expected format for stable-baselines3 v1.x (obs, reward, done, info)
-        # Note: SB3 v2+ uses the new 5-tuple format directly.
-        return obs, reward, done, info # Return 4 items
+                return obs, reward, done, truncated, info
+            else:  # Traditional 4-element return
+                obs, reward, done, info = step_result
+                
+                # Add reward components if available in the base environment
+                if hasattr(self.env, 'reward_components'):
+                    info['reward_components'] = self.env.reward_components
+                
+                # Store true reward (before potential normalization in wrapper)
+                info['episode_real_reward'] = reward
+                
+                # Convert the observation if it's a dictionary
+                if isinstance(obs, dict):
+                    obs = self._flatten_obs(obs)
+                
+                return obs, reward, done, info
+        except Exception as e:
+            print(f"Error in GymAdapter.step: {e}")
+            # Return safe defaults in case of error
+            zero_obs = np.zeros(self.observation_space.shape, dtype=self.observation_space.dtype)
+            return zero_obs, 0.0, True, {'error': str(e)}
 
     def reset(self, **kwargs):
         # Call the environment's reset method

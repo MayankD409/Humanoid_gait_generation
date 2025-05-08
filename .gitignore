@@ -43,8 +43,7 @@ logs/*
 !logs/.gitkeep
 
 # Model checkpoints
-models/*
-!models/.gitkeep
+models/
 custom_checkpoints/*
 !custom_checkpoints/.gitkeep
 
@@ -55,3 +54,8 @@ custom_checkpoints/*
 # PyBullet specific
 *.obj
 *.urdf 
+
+..bfg-report/2025-04-30/10-54-30
+bfg.jar
+videos/
+mocap/

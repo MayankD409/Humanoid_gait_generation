@@ -28,11 +28,12 @@ stop_existing_training
 
 # Create a run name with timestamp
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-RUN_NAME="enhanced_walk_${TIMESTAMP}"
+RUN_NAME="enhanced_walk_20250501_102201"
+# "enhanced_walk_${TIMESTAMP}"
 
 # You can continue from a previous model if needed
 # CONTINUE_FROM="models/walk_reward_v2/best_model.zip"
-CONTINUE_FROM=""
+CONTINUE_FROM="models/enhanced_walk_20250501_102201/ppo_humanoid_19600000_steps.zip"
 # "models/train_run_2/ppo_humanoid_steps_27200000_steps.zip"
 
 # Set the number of environments based on your CPU cores
@@ -46,7 +47,7 @@ LOG_FILE="logs/${RUN_NAME}_output.log"
 
 # Run the training script and tee output to log file
 python3 train_improved.py \
-    --timesteps 30000000 \
+    --timesteps 150000000 \
     --timesteps_per_iteration 10000 \
     --log_dir logs \
     --model_dir models \

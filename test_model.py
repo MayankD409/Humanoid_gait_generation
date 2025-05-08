@@ -3,6 +3,7 @@ import gym
 import time
 import numpy as np
 import argparse
+import pybullet as p
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from humanoid_env import HumanoidImitationWalkEnv, GymAdapter
@@ -71,6 +72,10 @@ def main():
                         help='Enable debug output')
     parser.add_argument('--slowmo', type=float, default=1.0,
                         help='Slow motion factor (1.0 = normal speed, 2.0 = half speed, etc.)')
+    parser.add_argument('--record', action='store_true',
+                        help='Record video of the simulation')
+    parser.add_argument('--video_name', type=str, default='simulation_video',
+                        help='Name of the output video file (without extension)')
     args = parser.parse_args()
     
     # Paths to model and normalization stats
@@ -86,6 +91,22 @@ def main():
     # Enable debug mode if requested
     if hasattr(env, 'debug'):
         env.debug = args.debug
+    
+    # Setup video recording if requested
+    if args.record and args.render:
+        video_dir = 'videos'
+        os.makedirs(video_dir, exist_ok=True)
+        video_path = os.path.join(video_dir, f"{args.video_name}.mp4")
+        print(f"Recording video to {video_path}")
+        # Get the PyBullet client ID from the environment if possible
+        if hasattr(env, '_p') and env._p is not None:
+            p_client = env._p
+        else:
+            # If we can't get the client directly, use the active client
+            p_client = p
+        # Setup video logging with ffmpeg
+        p_client.configureDebugVisualizer(p_client.COV_ENABLE_GUI, 0)
+        p_client.startStateLogging(p_client.STATE_LOGGING_VIDEO_MP4, video_path)
     
     # Apply GymAdapter wrapper for API compatibility
     env = GymAdapter(env)
@@ -165,6 +186,14 @@ def main():
         print(f"Average episode reward: {np.mean(episode_rewards):.4f}")
         print(f"Average episode length: {np.mean(episode_lengths):.2f}")
         print("============================")
+    
+    # Stop video recording if it was enabled
+    if args.record and args.render:
+        if hasattr(env, '_p') and env._p is not None:
+            env._p.stopStateLogging(p.STATE_LOGGING_VIDEO_MP4)
+        else:
+            p.stopStateLogging(p.STATE_LOGGING_VIDEO_MP4)
+        print(f"Video recording saved to {video_path}")
 
 if __name__ == "__main__":
     main() 

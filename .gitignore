@@ -54,3 +54,8 @@ custom_checkpoints/*
 # PyBullet specific
 *.obj
 *.urdf 
+
+..bfg-report/2025-04-30/10-54-30
+bfg.jar
+videos/
+mocap/

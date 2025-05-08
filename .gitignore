@@ -43,7 +43,7 @@ logs/*
 !logs/.gitkeep
 
 # Model checkpoints
-models/
+model/
 custom_checkpoints/*
 !custom_checkpoints/.gitkeep
 
@@ -59,3 +59,5 @@ custom_checkpoints/*
 bfg.jar
 videos/
 mocap/
+behaviour_cloning/expert_policies/
+behaviour_cloning/imitation_learning_logs/

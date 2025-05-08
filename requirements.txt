@@ -13,6 +13,28 @@ tensorflow>=2.15.0
 # Visualization
 tensorboard>=2.11.2
 
+# Ray for parallel processing
+ray>=2.40.0
+
+# MuJoCo and control libraries
+mujoco>=3.3.1
+dm_control>=1.0.28
+dm-env>=1.6
+dm-tree>=0.1.9
+
+# Image processing and rendering
+imageio>=2.37.0
+imageio-ffmpeg>=0.6.0
+PyOpenGL>=3.1.9
+glfw>=2.9.0
+
+# Data handling and utilities
+scipy>=1.15.2
+tqdm>=4.67.1
+lxml>=5.4.0
+PyYAML>=6.0.2
+transforms3d>=0.4.2
+
 # Other dependencies used by stable-baselines3
 cloudpickle
 matplotlib

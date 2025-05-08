@@ -33,7 +33,7 @@ RUN_NAME="enhanced_walk_20250501_102201"
 
 # You can continue from a previous model if needed
 # CONTINUE_FROM="models/walk_reward_v2/best_model.zip"
-CONTINUE_FROM="models/enhanced_walk_20250501_102201/ppo_humanoid_19600000_steps.zip"
+CONTINUE_FROM="model/enhanced_walk_20250501_102201/ppo_humanoid_19600000_steps.zip"
 # "models/train_run_2/ppo_humanoid_steps_27200000_steps.zip"
 
 # Set the number of environments based on your CPU cores
@@ -50,7 +50,7 @@ python3 train_improved.py \
     --timesteps 150000000 \
     --timesteps_per_iteration 10000 \
     --log_dir logs \
-    --model_dir models \
+    --model_dir model \
     --run_name "${RUN_NAME}" \
     --n_envs ${NUM_ENVS} \
     --motion_file data/Walking.json \

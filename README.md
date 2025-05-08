@@ -30,19 +30,19 @@ mkdir -p models/enhanced_walk_2
 ### 2. Run the model
 
 ```bash
-python test_model.py --model_dir models/enhanced_walk_2 --model_name best_model --render
+python test_model.py --model_dir models --model_name best_model --render
 ```
 
 Add `--slowmo 1.5` to slow down the animation for better visualization:
 
 ```bash
-python test_model.py --model_dir models/enhanced_walk_2 --model_name best_model --render --slowmo 1.5
+python test_model.py --model_dir models --model_name best_model --render --slowmo 1.5
 ```
 
 To record a video of the simulation:
 
 ```bash
-python test_model.py --model_dir models/enhanced_walk_2 --model_name best_model --render --record --video_name enhanced_walk_demo
+python test_model.py --model_dir models --model_name best_model --render --record --video_name enhanced_walk_demo
 ```
 
 ## Training Your Own Model

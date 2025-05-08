@@ -17,7 +17,7 @@ pip install -r requirements.txt
 
 ### 1. Download the pre-trained model
 
-Download the `model` folder from [Google Drive](INSERT_GOOGLE_DRIVE_LINK_HERE) and place it in the root directory.
+Download the `model` folder from [Google Drive](https://drive.google.com/drive/folders/1JUXcVOY2gDUFPts4mF-QsfWmRtnImHrA?usp=sharing) and place it in the root directory.
 
 
 ### 2. Run the model
